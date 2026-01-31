@@ -58,8 +58,8 @@ export default function HomeScreen() {
   // Motion data buffers
   const accelBuffer = useRef<number[]>([]);
   const gyroBuffer = useRef<number[]>([]);
-  const BUFFER_SIZE = 50;
-  const VARIANCE_CHECK_INTERVAL = 2000;
+  const BUFFER_SIZE = 30;  // Reduced for faster response
+  const VARIANCE_CHECK_INTERVAL = 1000;  // Check every 1 second (was 2 seconds)
 
   // Load saved guardian on mount
   useEffect(() => {
