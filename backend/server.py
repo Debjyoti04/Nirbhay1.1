@@ -292,51 +292,62 @@ async def evaluate_risk_rules(trip: dict) -> Optional[RiskEvent]:
 
 async def send_sms_alert(phone: str, message: str, location: Optional[dict] = None) -> bool:
     """
-    Send SMS alert via MSG91 API.
+    Send SMS alert via Fast2SMS API.
     Returns True if sent successfully, False otherwise.
     """
-    if MSG91_AUTH_KEY == 'demo_key':
-        logger.warning("MSG91 API key not configured - SMS alert simulated")
+    if FAST2SMS_API_KEY == 'demo_key':
+        logger.warning("Fast2SMS API key not configured - SMS alert simulated")
         logger.info(f"SIMULATED SMS to {phone}: {message}")
         return True  # Simulate success for demo
     
     try:
-        # MSG91 API endpoint
-        url = "https://control.msg91.com/api/v5/flow/"
+        # Fast2SMS API endpoint
+        url = "https://www.fast2sms.com/dev/bulkV2"
         
         # Build location string if available
         loc_str = ""
         if location:
-            loc_str = f" Last location: {location.get('latitude', 0):.6f}, {location.get('longitude', 0):.6f}"
+            lat = location.get('latitude', 0)
+            lon = location.get('longitude', 0)
+            loc_str = f" Location: https://maps.google.com/?q={lat},{lon}"
+        
+        # Clean phone number (remove + and country code if needed for Indian numbers)
+        clean_phone = phone.replace("+", "").replace(" ", "")
+        if clean_phone.startswith("91") and len(clean_phone) > 10:
+            clean_phone = clean_phone[2:]  # Remove 91 prefix for Indian numbers
+        
+        # Full message
+        full_message = message + loc_str
         
         payload = {
-            "template_id": MSG91_TEMPLATE_ID,
-            "short_url": "0",
-            "recipients": [
-                {
-                    "mobiles": phone,
-                    "message": message + loc_str
-                }
-            ]
+            "route": "q",  # Quick SMS route (for testing/transactional)
+            "message": full_message,
+            "language": "english",
+            "flash": 0,
+            "numbers": clean_phone,
         }
         
         headers = {
-            "authkey": MSG91_AUTH_KEY,
-            "Content-Type": "application/json"
+            "authorization": FAST2SMS_API_KEY,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cache-Control": "no-cache",
         }
         
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=payload, headers=headers)
-            
-        if response.status_code == 200:
-            logger.info(f"SMS sent successfully to {phone}")
+            response = await client.post(url, data=payload, headers=headers, timeout=10.0)
+        
+        result = response.json()
+        
+        if result.get("return") == True or result.get("status_code") == 200:
+            logger.info(f"Fast2SMS: SMS sent successfully to {phone}")
             return True
         else:
-            logger.error(f"SMS failed: {response.text}")
+            logger.error(f"Fast2SMS error: {result}")
             return False
             
     except Exception as e:
-        logger.error(f"SMS error: {str(e)}")
+        logger.error(f"Fast2SMS error: {str(e)}")
+        return False
         return False
 
 async def send_push_notification(fcm_token: str, title: str, body: str) -> bool:
