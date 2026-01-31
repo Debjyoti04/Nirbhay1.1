@@ -113,6 +113,47 @@ export default function HomeScreen() {
     return squaredDiffs.reduce((a, b) => a + b, 0) / arr.length;
   };
 
+  // Fallback to IP-based geolocation when GPS fails
+  const fallbackToIPGeolocation = async (tripId: string) => {
+    try {
+      console.log('GPS unavailable, falling back to IP-based geolocation...');
+      const response = await fetch(`${API_URL}/api/cellular-triangulation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trip_id: tripId,
+          use_ip_fallback: true,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.status === 'success' && data.latitude && data.longitude) {
+        console.log(`IP geolocation successful: ${data.latitude}, ${data.longitude} (accuracy: ${data.accuracy_radius}m)`);
+        
+        setTrackingSource('cellular_unwiredlabs');
+        setAccuracy(data.accuracy_radius || 5000);
+        
+        addLocation({
+          latitude: data.latitude,
+          longitude: data.longitude,
+          accuracy: data.accuracy_radius || 5000,
+          source: 'cellular_unwiredlabs',
+          timestamp: new Date().toISOString(),
+          accuracy_radius: data.accuracy_radius,
+        });
+        
+        return true;
+      } else {
+        console.log('IP geolocation failed:', data.message || 'Unknown error');
+        return false;
+      }
+    } catch (error) {
+      console.error('IP geolocation error:', error);
+      return false;
+    }
+  };
+
   // Start location tracking
   const startLocationTracking = async (tripId: string) => {
     if (isWeb) {
@@ -149,8 +190,14 @@ export default function HomeScreen() {
       return;
     }
     
+    // Native location tracking with GPS fallback to IP geolocation
+    let gpsAttemptFailed = false;
+    let fallbackIntervalId: ReturnType<typeof setInterval> | null = null;
+    
     try {
       const ExpoLocation = await import('expo-location');
+      
+      // Try GPS first
       locationSubscription.current = await ExpoLocation.watchPositionAsync(
         {
           accuracy: ExpoLocation.Accuracy.High,
@@ -189,6 +236,31 @@ export default function HomeScreen() {
           }
         }
       );
+    } catch (error) {
+      console.error('GPS location tracking error:', error);
+      gpsAttemptFailed = true;
+      
+      // GPS failed - start IP-based fallback polling
+      console.log('Starting IP-based geolocation fallback...');
+      
+      // Get initial location via IP
+      await fallbackToIPGeolocation(tripId);
+      
+      // Poll every 10 seconds for IP-based location
+      fallbackIntervalId = setInterval(async () => {
+        await fallbackToIPGeolocation(tripId);
+      }, 10000);
+      
+      // Store the interval so we can clean it up
+      locationSubscription.current = { 
+        remove: () => {
+          if (fallbackIntervalId) {
+            clearInterval(fallbackIntervalId);
+          }
+        }
+      };
+    }
+  };
     } catch (error) {
       console.error('Location tracking error:', error);
     }
