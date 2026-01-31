@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTripStore } from '../store/tripStore';
 import MapView from '../components/MapView';
+import SafetyCheckModal from '../components/SafetyCheckModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -48,6 +49,8 @@ export default function HomeScreen() {
   const [phoneInput, setPhoneInput] = useState(guardianPhone);
   const [showPhoneInput, setShowPhoneInput] = useState(false);
   const [locationPermission, setLocationPermission] = useState(isWeb);
+  const [showSafetyCheck, setShowSafetyCheck] = useState(false);
+  const [pendingPanicData, setPendingPanicData] = useState<{accelVariance: number, gyroVariance: number} | null>(null);
   
   // Refs for tracking subscriptions
   const locationSubscription = useRef<any>(null);
