@@ -585,17 +585,29 @@ async def cellular_triangulation(request: CellularTriangulationRequest):
                 {"$push": {"locations": loc_dict}}
             )
             
-            logger.info(f"Cellular triangulation successful for trip {request.trip_id}")
+            logger.info(f"Cellular triangulation successful for trip {request.trip_id}: lat={data['lat']}, lon={data['lon']}, accuracy={data.get('accuracy', 1000)}m")
             
             return {
                 "latitude": data["lat"],
                 "longitude": data["lon"],
                 "accuracy_radius": data.get("accuracy", 1000),
-                "source": "cellular_unwiredlabs"
+                "source": "cellular_unwiredlabs",
+                "balance": data.get("balance"),
+                "status": "success"
             }
         else:
-            logger.error(f"Unwired Labs error: {data}")
-            raise HTTPException(status_code=502, detail="Cellular triangulation failed")
+            # Handle "no matches" - cell tower not in database
+            # This is expected for some cell towers
+            error_msg = data.get("message", "Unknown error")
+            balance = data.get("balance", "unknown")
+            logger.warning(f"Unwired Labs: {error_msg} (API balance: {balance})")
+            
+            return {
+                "status": "no_match",
+                "message": error_msg,
+                "balance": balance,
+                "detail": "Cell tower not found in Unwired Labs database. This can happen with newer or less common towers."
+            }
             
     except httpx.RequestError as e:
         logger.error(f"Unwired Labs request error: {str(e)}")
