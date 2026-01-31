@@ -192,26 +192,35 @@ async def evaluate_risk_rules(trip: dict) -> Optional[RiskEvent]:
     locations = trip.get('locations', [])
     motion_events = trip.get('motion_events', [])
     
-    if not locations:
-        return None
-    
-    # Get recent data (last 5 minutes)
-    now = datetime.utcnow()
-    five_min_ago = now - timedelta(minutes=5)
-    
-    recent_locations = [l for l in locations if datetime.fromisoformat(l['timestamp'].replace('Z', '')) > five_min_ago]
-    recent_motion = [m for m in motion_events if datetime.fromisoformat(m['timestamp'].replace('Z', '')) > five_min_ago]
-    
-    # Check for panic movements in recent data
-    recent_panic = [m for m in recent_motion if m.get('is_panic', False)]
-    has_recent_panic = len(recent_panic) > 0
-    
+    # Risk can be detected even without location data if we have motion
     contributing_signals = []
     detected_rule = None
     confidence = 0.0
     
+    # Get recent data (last 1 minute for faster response)
+    now = datetime.utcnow()
+    one_min_ago = now - timedelta(seconds=60)
+    thirty_sec_ago = now - timedelta(seconds=30)
+    
+    recent_locations = [l for l in locations if datetime.fromisoformat(l['timestamp'].replace('Z', '')) > one_min_ago] if locations else []
+    recent_motion = [m for m in motion_events if datetime.fromisoformat(m['timestamp'].replace('Z', '')) > one_min_ago] if motion_events else []
+    very_recent_motion = [m for m in motion_events if datetime.fromisoformat(m['timestamp'].replace('Z', '')) > thirty_sec_ago] if motion_events else []
+    
+    # Check for panic movements in recent data
+    recent_panic = [m for m in recent_motion if m.get('is_panic', False)]
+    very_recent_panic = [m for m in very_recent_motion if m.get('is_panic', False)]
+    has_recent_panic = len(recent_panic) > 0
+    
+    # NEW RULE 0: Sustained Panic Movement (3+ panic events in 30 seconds)
+    # This triggers on panic alone without needing other signals
+    if len(very_recent_panic) >= 3:
+        detected_rule = "SUSTAINED_PANIC_MOVEMENT"
+        contributing_signals = ["sustained_panic", f"{len(very_recent_panic)}_panic_events_in_30s"]
+        confidence = RISK_RULES[detected_rule]["base_confidence"]
+        logger.warning(f"SUSTAINED PANIC: {len(very_recent_panic)} panic events detected")
+    
     # Rule 1: Panic Movement + Abnormal Stop
-    if has_recent_panic and len(recent_locations) >= 2:
+    if not detected_rule and has_recent_panic and len(recent_locations) >= 2:
         last_loc = recent_locations[-1]
         prev_loc = recent_locations[-2]
         distance = calculate_distance(
@@ -225,13 +234,13 @@ async def evaluate_risk_rules(trip: dict) -> Optional[RiskEvent]:
             confidence = RISK_RULES[detected_rule]["base_confidence"]
     
     # Rule 2: Panic Movement During Night
-    if has_recent_panic and is_night_time(now) and not detected_rule:
+    if not detected_rule and has_recent_panic and is_night_time(now):
         detected_rule = "PANIC_MOVEMENT_NIGHT"
         contributing_signals = ["panic_movement", "night_hours"]
         confidence = RISK_RULES[detected_rule]["base_confidence"]
     
     # Rule 3: GPS Loss followed by cellular-only movement
-    if len(recent_locations) >= 3 and not detected_rule:
+    if not detected_rule and len(recent_locations) >= 3:
         # Check if we switched from GPS to cellular
         gps_locations = [l for l in recent_locations if l['source'] == 'gps']
         cellular_locations = [l for l in recent_locations if l['source'] == 'cellular_unwiredlabs']
@@ -244,7 +253,7 @@ async def evaluate_risk_rules(trip: dict) -> Optional[RiskEvent]:
                 confidence = RISK_RULES[detected_rule]["base_confidence"]
     
     # Rule 4: Prolonged stop in unusual location (> 5 min stop after significant movement)
-    if len(locations) >= 5 and not detected_rule:
+    if not detected_rule and len(locations) >= 5:
         last_5_locs = locations[-5:]
         # Check if first 3 showed movement, last 2 are stationary
         movements = []
