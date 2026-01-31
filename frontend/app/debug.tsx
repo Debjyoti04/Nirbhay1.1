@@ -327,6 +327,12 @@ export default function DebugScreen() {
           <Text style={styles.sectionTitle}>Risk Detection Rules</Text>
           <View style={styles.card}>
             <View style={styles.ruleItem}>
+              <Text style={styles.ruleName}>SUSTAINED_PANIC_MOVEMENT</Text>
+              <Text style={styles.ruleDesc}>
+                Sustained panic movement (3+ events in 30 seconds) - triggers alert (confidence: 75%)
+              </Text>
+            </View>
+            <View style={styles.ruleItem}>
               <Text style={styles.ruleName}>PANIC_MOVEMENT_ABNORMAL_STOP</Text>
               <Text style={styles.ruleDesc}>
                 Panic movement detected followed by sudden stop (confidence: 70%)
