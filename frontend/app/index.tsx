@@ -251,7 +251,12 @@ export default function HomeScreen() {
         
         const accelVariance = calculateVariance(accelBuffer.current);
         const gyroVariance = calculateVariance(gyroBuffer.current);
-        const isPanic = accelVariance > 15 && gyroVariance > 5;
+        
+        // Lowered thresholds for better sensitivity (match backend)
+        // Panic = accel variance > 2 AND gyro variance > 0.5
+        const isPanic = accelVariance > 2 && gyroVariance > 0.5;
+        
+        console.log(`Motion: accel=${accelVariance.toFixed(2)}, gyro=${gyroVariance.toFixed(2)}, panic=${isPanic}`);
         
         setMotionStatus(isPanic ? 'panic_detected' : 'normal');
         
