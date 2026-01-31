@@ -127,6 +127,10 @@ class GuardianUpdate(BaseModel):
 # ===========================================
 
 RISK_RULES = {
+    "SUSTAINED_PANIC_MOVEMENT": {
+        "description": "Sustained panic movement detected (3+ events in 30 seconds)",
+        "base_confidence": 0.75
+    },
     "PANIC_MOVEMENT_ABNORMAL_STOP": {
         "description": "Panic movement detected followed by sudden stop",
         "base_confidence": 0.7
@@ -149,9 +153,10 @@ RISK_RULES = {
     }
 }
 
-# Thresholds for panic detection
-PANIC_ACCEL_THRESHOLD = 15.0  # m/s^2 variance threshold for panic
-PANIC_GYRO_THRESHOLD = 5.0    # rad/s variance threshold for panic
+# Thresholds for panic detection - LOWERED for better sensitivity
+# Original values were too high for testing: accel=15, gyro=5
+PANIC_ACCEL_THRESHOLD = 2.0   # m/s^2 variance threshold for panic (lowered from 15)
+PANIC_GYRO_THRESHOLD = 0.5    # rad/s variance threshold for panic (lowered from 5)
 NIGHT_START_HOUR = 22  # 10 PM
 NIGHT_END_HOUR = 5     # 5 AM
 
