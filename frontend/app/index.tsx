@@ -47,19 +47,19 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
   const [phoneInput, setPhoneInput] = useState(guardianPhone);
   const [showPhoneInput, setShowPhoneInput] = useState(false);
-  const [locationPermission, setLocationPermission] = useState(isWeb); // Web always has "permission"
+  const [locationPermission, setLocationPermission] = useState(isWeb);
   
-  // Sensor subscriptions (native only)
+  // Refs for tracking subscriptions
   const locationSubscription = useRef<any>(null);
   const accelSubscription = useRef<any>(null);
   const gyroSubscription = useRef<any>(null);
-  const varianceIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const varianceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
-  // Motion data buffers for variance calculation
+  // Motion data buffers
   const accelBuffer = useRef<number[]>([]);
   const gyroBuffer = useRef<number[]>([]);
-  const BUFFER_SIZE = 50; // ~2.5 seconds at 20Hz
-  const VARIANCE_CHECK_INTERVAL = 2000; // Check every 2 seconds
+  const BUFFER_SIZE = 50;
+  const VARIANCE_CHECK_INTERVAL = 2000;
 
   // Load saved guardian on mount
   useEffect(() => {
@@ -73,24 +73,24 @@ export default function HomeScreen() {
   // Request permissions on mount (native only)
   useEffect(() => {
     if (!isWeb) {
-      requestPermissions();
+      requestNativePermissions();
     }
   }, []);
 
-  const requestPermissions = async () => {
+  const requestNativePermissions = async () => {
     if (isWeb) {
       setLocationPermission(true);
       return;
     }
     
     try {
-      const Location = require('expo-location');
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      // Dynamic import for native-only modules
+      const ExpoLocation = await import('expo-location');
+      const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         setLocationPermission(true);
-        // Also request background permission
         try {
-          await Location.requestBackgroundPermissionsAsync();
+          await ExpoLocation.requestBackgroundPermissionsAsync();
         } catch (e) {
           console.log('Background permission not available');
         }
@@ -105,7 +105,7 @@ export default function HomeScreen() {
     }
   };
 
-  // Calculate variance of array
+  // Calculate variance
   const calculateVariance = (arr: number[]): number => {
     if (arr.length === 0) return 0;
     const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -113,7 +113,7 @@ export default function HomeScreen() {
     return squaredDiffs.reduce((a, b) => a + b, 0) / arr.length;
   };
 
-  // Start location tracking (native)
+  // Start location tracking
   const startLocationTracking = async (tripId: string) => {
     if (isWeb) {
       // Web demo: simulate location updates
@@ -132,7 +132,6 @@ export default function HomeScreen() {
         setTrackingSource('gps');
         setAccuracy(15);
         
-        // Send to backend
         fetch(`${API_URL}/api/trips/${tripId}/location`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -151,17 +150,15 @@ export default function HomeScreen() {
     }
     
     try {
-      const Location = require('expo-location');
-      locationSubscription.current = await Location.watchPositionAsync(
+      const ExpoLocation = await import('expo-location');
+      locationSubscription.current = await ExpoLocation.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
+          accuracy: ExpoLocation.Accuracy.High,
           timeInterval: 5000,
           distanceInterval: 10,
         },
         async (location: any) => {
           const { latitude, longitude, accuracy: gpsAccuracy } = location.coords;
-          
-          // GPS accuracy > 100m is considered poor, fallback to cellular
           const source = gpsAccuracy && gpsAccuracy > 100 ? 'cellular_unwiredlabs' : 'gps';
           
           setTrackingSource(source);
@@ -175,7 +172,6 @@ export default function HomeScreen() {
             timestamp: new Date().toISOString(),
           });
           
-          // Send to backend
           try {
             await fetch(`${API_URL}/api/trips/${tripId}/location`, {
               method: 'POST',
@@ -198,10 +194,9 @@ export default function HomeScreen() {
     }
   };
 
-  // Start motion tracking (native)
-  const startMotionTracking = (tripId: string) => {
+  // Start motion tracking
+  const startMotionTracking = async (tripId: string) => {
     if (isWeb) {
-      // Web demo: simulate motion updates
       varianceIntervalRef.current = setInterval(async () => {
         const accelVariance = Math.random() * 10;
         const gyroVariance = Math.random() * 3;
@@ -226,17 +221,15 @@ export default function HomeScreen() {
     }
     
     try {
-      const { Accelerometer, Gyroscope } = require('expo-sensors');
+      const ExpoSensors = await import('expo-sensors');
+      const { Accelerometer, Gyroscope } = ExpoSensors;
       
-      // Reset buffers
       accelBuffer.current = [];
       gyroBuffer.current = [];
       
-      // Set update intervals (50ms = 20Hz)
       Accelerometer.setUpdateInterval(50);
       Gyroscope.setUpdateInterval(50);
       
-      // Subscribe to accelerometer
       accelSubscription.current = Accelerometer.addListener(({ x, y, z }: any) => {
         const magnitude = Math.sqrt(x * x + y * y + z * z);
         accelBuffer.current.push(magnitude);
@@ -245,7 +238,6 @@ export default function HomeScreen() {
         }
       });
       
-      // Subscribe to gyroscope
       gyroSubscription.current = Gyroscope.addListener(({ x, y, z }: any) => {
         const magnitude = Math.sqrt(x * x + y * y + z * z);
         gyroBuffer.current.push(magnitude);
@@ -254,19 +246,15 @@ export default function HomeScreen() {
         }
       });
       
-      // Periodic variance check
       varianceIntervalRef.current = setInterval(async () => {
         if (accelBuffer.current.length < 10 || gyroBuffer.current.length < 10) return;
         
         const accelVariance = calculateVariance(accelBuffer.current);
         const gyroVariance = calculateVariance(gyroBuffer.current);
-        
-        // Check if this indicates panic (thresholds from backend)
         const isPanic = accelVariance > 15 && gyroVariance > 5;
         
         setMotionStatus(isPanic ? 'panic_detected' : 'normal');
         
-        // Send to backend
         try {
           const response = await fetch(`${API_URL}/api/trips/${tripId}/motion`, {
             method: 'POST',
@@ -314,7 +302,7 @@ export default function HomeScreen() {
   // Handle Start Trip
   const handleStartTrip = async () => {
     if (!locationPermission && !isWeb) {
-      await requestPermissions();
+      await requestNativePermissions();
       return;
     }
     
@@ -325,7 +313,6 @@ export default function HomeScreen() {
     
     setLoading(true);
     try {
-      // Create trip on backend
       const response = await fetch(`${API_URL}/api/trips`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -338,9 +325,8 @@ export default function HomeScreen() {
       const trip = await response.json();
       startTrip(trip);
       
-      // Start tracking services
       await startLocationTracking(trip.id);
-      startMotionTracking(trip.id);
+      await startMotionTracking(trip.id);
       
       Alert.alert('Trip Started', 'Safety tracking is now active.');
     } catch (error) {
@@ -357,10 +343,8 @@ export default function HomeScreen() {
     
     setLoading(true);
     try {
-      // Stop tracking
       stopTracking();
       
-      // End trip on backend
       await fetch(`${API_URL}/api/trips/${currentTrip.id}/end`, {
         method: 'POST',
       });
@@ -385,7 +369,6 @@ export default function HomeScreen() {
     setGuardianPhone(phoneInput);
     setShowPhoneInput(false);
     
-    // If trip is active, update guardian on backend
     if (currentTrip) {
       try {
         await fetch(`${API_URL}/api/trips/${currentTrip.id}/guardian`, {
@@ -402,7 +385,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Navigate to debug screen
   const goToDebug = () => {
     router.push('/debug');
   };
@@ -410,7 +392,6 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Ionicons name="shield-checkmark" size={32} color="#ff4757" />
@@ -423,7 +404,6 @@ export default function HomeScreen() {
         
         <Text style={styles.subtitle}>Autonomous Women Safety System</Text>
         
-        {/* Web Demo Notice */}
         {isWeb && (
           <View style={styles.webNotice}>
             <Ionicons name="information-circle" size={20} color="#3498db" />
@@ -433,7 +413,6 @@ export default function HomeScreen() {
           </View>
         )}
         
-        {/* Status Card */}
         <View style={styles.statusCard}>
           <View style={styles.statusRow}>
             <View style={styles.statusItem}>
@@ -486,14 +465,12 @@ export default function HomeScreen() {
           )}
         </View>
         
-        {/* Map View */}
         {isTracking && locations.length > 0 && (
           <View style={styles.mapContainer}>
             <MapView locations={locations} />
           </View>
         )}
         
-        {/* Guardian Phone Input */}
         {showPhoneInput && (
           <View style={styles.phoneInputCard}>
             <Text style={styles.phoneInputTitle}>Guardian Phone Number</Text>
@@ -525,7 +502,6 @@ export default function HomeScreen() {
           </View>
         )}
         
-        {/* Guardian Info */}
         {guardianPhone && !showPhoneInput && (
           <TouchableOpacity 
             style={styles.guardianCard}
@@ -537,7 +513,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
         
-        {/* Main Action Button */}
         <TouchableOpacity
           style={[
             styles.mainButton,
@@ -562,7 +537,6 @@ export default function HomeScreen() {
           )}
         </TouchableOpacity>
         
-        {/* Risk Alert Banner */}
         {lastRiskRule && (
           <View style={styles.riskBanner}>
             <Ionicons name="warning" size={24} color="#fff" />
@@ -573,7 +547,6 @@ export default function HomeScreen() {
           </View>
         )}
         
-        {/* Info Cards */}
         <View style={styles.infoSection}>
           <View style={styles.infoCard}>
             <Ionicons name="location" size={24} color="#3498db" />
