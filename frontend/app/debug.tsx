@@ -376,8 +376,12 @@ export default function DebugScreen() {
               <Text style={styles.value}>{"3+ events in 30s"}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.label}>GPS Fallback:</Text>
-              <Text style={styles.value}>{"accuracy > 100m"}</Text>
+              <Text style={styles.label}>GPS Accuracy:</Text>
+              <Text style={styles.value}>{"~15m"}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.label}>Fallback Accuracy:</Text>
+              <Text style={styles.value}>{"80-100m"}</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.label}>Night Hours:</Text>
